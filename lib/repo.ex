@@ -52,6 +52,10 @@ defmodule Eredisx.Repo do
       def end_transaction do
         :poolboy.transaction(__MODULE__, &(Eredisx.Client.end_transaction(pid: &1)))
       end
+      defdelegate start_pipeline, to: Eredisx.Client
+      def exec_pipeline do
+        :poolboy.transaction(__MODULE__, &(Eredisx.Client.exec_pipeline(pid: &1)))
+      end
       def query(api, args) do
         :poolboy.transaction(__MODULE__, &(Eredisx.Client.query(api, args, pid: &1)))
       end
@@ -74,9 +78,9 @@ defmodule Eredisx.Repo do
       defmacro pipeline(block) do
         quote do
           res = Task.async(fn ->
-            start_pipeline
+            __MODULE__.start_pipeline
             unquote(Keyword.get(block, :do, nil))
-            exec_pipeline
+            __MODULE__.exec_pipeline
           end)
           |> Task.await
           |> Enum.unzip
