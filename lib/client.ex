@@ -13,8 +13,8 @@ defmodule Eredisx.Client do
     Agent.start_link(fn -> [] end, name: agent_name)
   end
 
-  def exec_pipeline do
-    query_pipeline(commands_from_agent(agent_name))
+  def exec_pipeline(opts \\ []) do
+    query_pipeline(commands_from_agent(agent_name), opts)
   end
 
   def start_transaction do
@@ -51,7 +51,7 @@ defmodule Eredisx.Client do
     end
   end
 
-  def query_pipeline(commands) when is_list(commands) do
-    elem(:eredis.start_link, 1) |> :eredis.qp(commands)
+  def query_pipeline(commands, opts \\ []) when is_list(commands) do
+    (Keyword.get(opts, :pid) || elem(:eredis.start_link, 1)) |> :eredis.qp(commands)
   end
 end
