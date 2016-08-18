@@ -49,18 +49,41 @@ defmodule Eredisx.Repo do
       end
 
       defdelegate start_transaction, to: Eredisx.Client
-      def end_transaction do
-        :poolboy.transaction(__MODULE__, &(Eredisx.Client.end_transaction(pid: &1)))
+      def end_transaction(use_pool \\ true) do
+        if use_pool do
+          :poolboy.transaction(__MODULE__, &(Eredisx.Client.end_transaction(pid: &1)))
+        else
+          execute_wo_pool(&(Eredisx.Client.end_transaction(pid: &1)))
+        end
       end
       defdelegate start_pipeline, to: Eredisx.Client
-      def exec_pipeline do
-        :poolboy.transaction(__MODULE__, &(Eredisx.Client.exec_pipeline(pid: &1)))
+      def exec_pipeline(use_pool \\ true) do
+        if use_pool do
+          :poolboy.transaction(__MODULE__, &(Eredisx.Client.exec_pipeline(pid: &1)))
+        else
+          execute_wo_pool(&(Eredisx.Client.exec_pipeline(pid: &1)))
+        end
       end
-      def query(api, args) do
-        :poolboy.transaction(__MODULE__, &(Eredisx.Client.query(api, args, pid: &1)))
+      def query(api, args, use_pool \\ true) do
+        if use_pool do
+          :poolboy.transaction(__MODULE__, &(Eredisx.Client.query(api, args, pid: &1)))
+        else
+          execute_wo_pool(&(Eredisx.Client.query(api, args, pid: &1)))
+        end
       end
-      def query_pipeline(commands) when is_list(commands) do
-        :poolboy.transaction(__MODULE__, &(:eredis.qp(&1, commands)))
+      def query_pipeline(commands, use_pool \\ true) when is_list(commands) do
+        if use_pool do
+          :poolboy.transaction(__MODULE__, &(:eredis.qp(&1, commands)))
+        else
+          execute_wo_pool(&(:eredis.qp(&1, commands)))
+        end
+      end
+
+      defp execute_wo_pool(executable) do
+        client = :eredis.start_link |> elem(1)
+        result = executable.(client)
+        :eredis.stop(client)
+        result
       end
 
       @doc """
@@ -77,10 +100,34 @@ defmodule Eredisx.Repo do
       """
       defmacro pipeline(block) do
         quote do
+          pipeline unquote(block), true
+        end
+      end
+      @doc """
+      Usage:
+      ```
+      Execute pipeline without connection pool
+      AnyRepo.pipeline_wo_pool do
+      key = "testvalue"
+      Eredisx.Api.String.set(key, 100)
+      Eredisx.Api.String.incr(key)
+      Eredisx.Api.String.incr(key)
+      Eredisx.Api.String.set(key, "hogefuga")
+      end
+      ```
+      """
+      defmacro pipeline_wo_pool(block) do
+        quote do
+          pipeline unquote(block), false
+        end
+      end
+
+      defmacro pipeline(block, use_pool) do
+        quote do
           res = Task.async(fn ->
             __MODULE__.start_pipeline
             unquote(Keyword.get(block, :do, nil))
-            __MODULE__.exec_pipeline
+            __MODULE__.exec_pipeline(unquote(use_pool))
           end)
           |> Task.await
           |> Enum.unzip
@@ -103,9 +150,36 @@ defmodule Eredisx.Repo do
       """
       defmacro transaction(block) do
         quote do
+          transaction unquote(block), true
+        end
+      end
+
+      @doc """
+      Execute transaction without connection pool
+
+      Usage:
+      ```
+      AnyRepo.transaction_wo_pool do
+      key = "testvalue_transaction"
+      Eredisx.Api.General.del(key)
+      Eredisx.Api.String.set(key, "fugafuga")
+      Eredisx.Api.String.incr(key)
+      Eredisx.Api.String.incr(key)
+      Eredisx.Api.String.set(key, "fugafuga" |> String.reverse)
+      end
+      ```
+      """
+      defmacro transaction_wo_pool(block) do
+        quote do
+          transaction unquote(block), false
+        end
+      end
+
+      defmacro transaction(block, use_pool) do
+        quote do
           __MODULE__.start_transaction
           unquote(Keyword.get(block, :do, nil))
-          {:ok, result} = __MODULE__.end_transaction
+          {:ok, result} = __MODULE__.end_transaction(unquote(use_pool))
 
           errors = 
             case result do
