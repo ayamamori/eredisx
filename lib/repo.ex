@@ -80,7 +80,9 @@ defmodule Eredisx.Repo do
       end
 
       defp execute_wo_pool(executable) do
-        client = :eredis.start_link |> elem(1)
+        config = Application.get_env(@otp_app, __MODULE__) 
+                  |> parse_eredis_option(@default_eredis_config)
+        client = :eredis.start_link(config) |> elem(1)
         result = executable.(client)
         :eredis.stop(client)
         result
