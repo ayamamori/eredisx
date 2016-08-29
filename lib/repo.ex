@@ -110,7 +110,9 @@ defmodule Eredisx.Repo do
           errors = 
             case result do
               :undefined -> [:error]
-              r -> r |> Enum.filter(fn(v) -> Regex.match?(~r/\Aerr /i, v) end)
+              r -> r |> Enum.filter(fn(v) -> 
+                is_binary(r) && Regex.match?(~r/\Aerr /i, v) 
+                end)
             end
           {if(length(errors) > 0, do: :error, else: :ok), result}
         end
